@@ -33,12 +33,13 @@
 - **言語**: Python 3.9+
 - **フレームワーク**: FastAPI 0.104+
 - **データベース**: PostgreSQL 14+ (開発時はSQLite)
-- **ORM**: SQLAlchemy 2.0+ with Alembic
+- **ORM**: SQLAlchemy 2.0+ with Alembic (Mapped & mapped_column構文)
 - **認証**: JWT (PyJWT, python-jose)
 - **バリデーション**: Pydantic 2.0+
 - **テスト**: pytest, pytest-asyncio
 - **ドキュメント**: OpenAPI/Swagger (FastAPI自動生成)
 - **ASGI Server**: Uvicorn
+- **タイムゾーン**: ZoneInfo (Python 3.9+標準ライブラリ, デフォルト: Asia/Tokyo)
 - **その他**: bcrypt, python-multipart, python-dotenv
 
 ## 2. コンポーネント設計
@@ -86,17 +87,17 @@
       async def create_user(self, user_data: UserCreate) -> User:
           # パスワードハッシュ化、重複チェック等
           
-      async def authenticate_user(self, email: str, password: str) -> Optional[User]:
+      async def authenticate_user(self, username: str, password: str) -> Optional[User]:
           # 認証ロジック
   
   class ArticleService:
       def __init__(self, article_repo: ArticleRepository):
           self.article_repo = article_repo
       
-      async def create_article(self, article_data: ArticleCreate, author_id: int) -> Article:
+      async def create_article(self, article_data: ArticleCreate, author_id: UUID) -> Article:
           # 記事作成ロジック
           
-      async def get_user_articles(self, user_id: int) -> List[Article]:
+      async def get_user_articles(self, user_id: UUID) -> List[Article]:
           # ユーザーの記事取得
   ```
 
@@ -109,10 +110,11 @@
           self.db = db
       
       async def create(self, user: User) -> User:
-      async def get_by_id(self, user_id: int) -> Optional[User]:
+      async def get_by_id(self, user_id: UUID) -> Optional[User]:
+      async def get_by_username(self, username: str) -> Optional[User]:
       async def get_by_email(self, email: str) -> Optional[User]:
-      async def update(self, user_id: int, user_data: dict) -> Optional[User]:
-      async def delete(self, user_id: int) -> bool:
+      async def update(self, user_id: UUID, user_data: dict) -> Optional[User]:
+      async def delete(self, user_id: UUID) -> bool:
   ```
 
 ## 3. データベース設計
@@ -122,7 +124,8 @@
 #### Users テーブル
 ```sql
 CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     hashed_password VARCHAR(255) NOT NULL,
     full_name VARCHAR(255),
@@ -132,16 +135,17 @@ CREATE TABLE users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_users_email ON users(email);
 ```
 
 #### Articles テーブル
 ```sql
 CREATE TABLE articles (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     is_published BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -155,33 +159,75 @@ CREATE INDEX idx_articles_published ON articles(is_published);
 ### 3.2 SQLAlchemy Models
 ```python
 # app/models/user.py
+import uuid
+from datetime import datetime
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import String, Boolean, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from app.config import settings
+
+class Base(DeclarativeBase):
+    pass
+
 class User(Base):
     __tablename__ = "users"
     
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    full_name = Column(String)
-    is_active = Column(Boolean, default=True)
-    is_admin = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), 
+        primary_key=True, 
+        default=uuid.uuid4, 
+        index=True
+    )
+    username: Mapped[str] = mapped_column(String, unique=True, index=True)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String)
+    full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(ZoneInfo(settings.timezone))
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(ZoneInfo(settings.timezone)),
+        onupdate=lambda: datetime.now(ZoneInfo(settings.timezone))
+    )
     
-    articles = relationship("Article", back_populates="author")
+    articles: Mapped[list["Article"]] = relationship("Article", back_populates="author")
 
 # app/models/article.py  
 class Article(Base):
     __tablename__ = "articles"
     
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    content = Column(Text, nullable=False)
-    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    is_published = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), 
+        primary_key=True, 
+        default=uuid.uuid4, 
+        index=True
+    )
+    title: Mapped[str] = mapped_column(String)
+    content: Mapped[str] = mapped_column(String)  # または Text
+    author_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), 
+        ForeignKey("users.id")
+    )
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(ZoneInfo(settings.timezone))
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(ZoneInfo(settings.timezone)),
+        onupdate=lambda: datetime.now(ZoneInfo(settings.timezone))
+    )
     
-    author = relationship("User", back_populates="articles")
+    author: Mapped["User"] = relationship("User", back_populates="articles")
 ```
 
 ## 4. APIインターフェース
@@ -191,19 +237,31 @@ class Article(Base):
 POST /auth/register
 Content-Type: application/json
 {
+    "username": "johndoe",
     "email": "user@example.com",
     "password": "secure123",
     "full_name": "John Doe"
 }
 
+Response:
+{
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "username": "johndoe",
+    "email": "user@example.com",
+    "full_name": "John Doe",
+    "is_active": true,
+    "created_at": "2024-01-01T00:00:00Z"
+}
+
 POST /auth/login
 Content-Type: application/x-www-form-urlencoded
-username=user@example.com&password=secure123
+username=johndoe&password=secure123
 
 Response:
 {
     "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-    "token_type": "bearer"
+    "token_type": "bearer",
+    "user_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
@@ -232,12 +290,23 @@ Authorization: Bearer {token}
     "is_published": true
 }
 
+Response:
+{
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "title": "Article Title",
+    "content": "Article content...",
+    "author_id": "550e8400-e29b-41d4-a716-446655440000",
+    "is_published": true,
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+}
+
 GET /articles/?skip=0&limit=10&search=keyword
 Authorization: Bearer {token} (optional)
 
-GET /articles/{article_id}
-PUT /articles/{article_id}
-DELETE /articles/{article_id}
+GET /articles/{article_id}     # article_id は UUID
+PUT /articles/{article_id}     # article_id は UUID
+DELETE /articles/{article_id}  # article_id は UUID
 Authorization: Bearer {token}
 ```
 
@@ -396,6 +465,7 @@ class Settings(BaseSettings):
     secret_key: str = "your-secret-key"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    timezone: str = "Asia/Tokyo"  # デフォルトタイムゾーン（日本語対応必須のため）
     
     class Config:
         env_file = ".env"
@@ -424,10 +494,10 @@ api_project/
 │   │   ├── __init__.py
 │   │   ├── user.py
 │   │   └── article.py
-│   ├── schemas/             # Pydanticスキーマ
+│   ├── schemas/             # Pydanticスキーマ (UUID対応)
 │   │   ├── __init__.py
-│   │   ├── user.py
-│   │   └── article.py
+│   │   ├── user.py         # from uuid import UUID を含む
+│   │   └── article.py      # from uuid import UUID を含む
 │   ├── services/            # ビジネスロジック
 │   │   ├── __init__.py
 │   │   ├── user_service.py
@@ -439,16 +509,54 @@ api_project/
 ├── tests/                   # テストコード
 ├── alembic/                 # DBマイグレーション
 ├── requirements.txt
-├── .env
+├── .env                     # 環境変数設定
 ├── docker-compose.yml
 └── Dockerfile
+
+### 10.2 環境変数設定例（.env）
+```bash
+# データベース設定
+DATABASE_URL=sqlite:///./app.db
+# 本番環境の場合
+# DATABASE_URL=postgresql://user:password@localhost/api_db
+
+# セキュリティ設定
+SECRET_KEY=your-super-secret-key-here
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# タイムゾーン設定（日本語対応必須要件）
+TIMEZONE=Asia/Tokyo
+
+# CORS設定
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080
 ```
 
 ## 11. 実装上の注意事項
 
+- **SQLAlchemy 2.0+ 構文**: 最新のMapped・mapped_column構文を使用
+  - 型安全性の向上（Mapped[Type]による明示的な型定義）
+  - IDEの補完サポート改善
+  - ランタイムでの型チェック強化
+  - relationshipの型安全性向上
+- **タイムゾーン対応**: ZoneInfoを使用した堅牢な時刻管理
+  - `DateTime(timezone=True)`でタイムゾーン情報を保持
+  - `settings.timezone`による設定可能なタイムゾーン（デフォルト: Asia/Tokyo）
+  - UTC変換不要でローカル時間を正確に管理
+  - 日本語対応必須要件に合わせたタイムゾーン設計
+- **UUID使用**: 全てのテーブルの主キーはUUID v4を使用
+  - セキュリティ向上（IDの推測困難）
+  - 分散システムでの一意性保証
+  - マイグレーション時の重複回避
+- **ユーザー識別**: usernameとemailの両方をユニーク制約で管理
+  - usernameによるログイン認証（ユーザビリティ向上）
+  - emailとusername両方でのユニーク性チェック必須
+  - username文字数制限（50文字）でパフォーマンス最適化
+  - インデックス設定でログイン認証の高速化
 - **セキュリティ**: 機密情報は環境変数で管理、SQLインジェクション対策済みORM使用
 - **パフォーマンス**: 非同期処理の活用、適切なインデックス設計
 - **保守性**: 依存性注入パターン採用、レイヤー分離
 - **テスタビリティ**: モック可能な構造、テストDBの分離
 - **エラーハンドリング**: 統一されたエラーレスポンス形式
 - **ログ**: 構造化ログ、セキュリティログの実装
+- **UUID取り扱い**: PydanticスキーマでもUUID型を使用、文字列変換時は適切にハンドリング
