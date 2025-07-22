@@ -24,7 +24,7 @@ graph TB
 
 ### 1.2 技術スタック
 
-- **言語**: Python 3.8+
+- **言語**: Python 3.12+（3.13未満）
 - **フレームワーク**: FastAPI 0.115.12
 - **データベース**: PostgreSQL（asyncpg 0.30.0）
 - **ORM**: SQLAlchemy 2.0.40（非同期対応）
@@ -41,6 +41,7 @@ graph TB
 - **暗号化**: cryptography 44.0.2
 - **タイムゾーン**: tzdata 2025.2
 - **デプロイメント**: 仮想環境 + systemd
+- **Python新機能**: 型パラメータ構文、改善されたエラーメッセージ
 
 ## 2. コンポーネント設計
 
@@ -103,24 +104,39 @@ class JWTBearer(HTTPBearer):
 - **目的**: ユーザー管理のビジネスロジック
 - **公開インターフェース**:
 ```python
-from typing import Optional, List
+# Python 3.12の改善された型ヒント機能を活用
+from __future__ import annotations
+from typing import Generic, TypeVar, Optional
 from datetime import datetime
 from pydantic import BaseModel, EmailStr
 
-class UserService:
+# Python 3.12の型パラメータ構文を活用
+T = TypeVar('T')
+
+class BaseService[T]:
+    """ジェネリックベースサービスクラス"""
+    pass
+
+class UserService(BaseService[User]):
+    """ユーザー管理サービス
+    
+    Python 3.12の改善されたエラーメッセージと
+    性能向上の恩恵を受ける
+    """
+    
     async def create_user(self, user_data: UserCreate) -> User:
         """新規ユーザー作成"""
         pass
     
-    async def authenticate_user(self, email: str, password: str) -> Optional[User]:
-        """ユーザー認証"""
+    async def authenticate_user(self, email: str, password: str) -> User | None:
+        """ユーザー認証 - Python 3.10+ Union構文使用"""
         pass
     
-    async def get_user(self, user_id: int) -> Optional[User]:
+    async def get_user(self, user_id: int) -> User | None:
         """ユーザー情報取得"""
         pass
     
-    async def update_user(self, user_id: int, user_data: UserUpdate) -> Optional[User]:
+    async def update_user(self, user_id: int, user_data: UserUpdate) -> User | None:
         """ユーザー情報更新"""
         pass
     
@@ -335,10 +351,17 @@ CREATE INDEX idx_articles_published ON articles(is_published);
 ### 5.2 SQLAlchemyモデル（非同期対応）
 ```python
 # app/models/base.py
+from __future__ import annotations
+from typing import Any
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
 
 class Base(AsyncAttrs, DeclarativeBase):
+    """SQLAlchemy Baseモデルクラス
+    
+    Python 3.12の改善されたエラーメッセージと
+    型ヒント機能を活用
+    """
     pass
 
 # app/models/user.py
@@ -586,6 +609,9 @@ Response:
 
 #### 開発環境
 ```bash
+# Python 3.12+の使用を確認
+python --version  # Python 3.12.x であることを確認
+
 # 仮想環境の作成
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
@@ -673,6 +699,9 @@ APP_NAME=User Article API
 DEBUG=false
 HOST=0.0.0.0
 PORT=8000
+# Python 3.12+を使用することを明示
+PYTHON_VERSION_MIN=3.12
+PYTHON_VERSION_MAX=3.13
 
 # データベース設定
 DATABASE_URL=postgresql+asyncpg://apiuser:apipass@localhost/apidb
