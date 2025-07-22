@@ -227,6 +227,8 @@ class UserBase(BaseModel):
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=50)
     full_name: Optional[str] = None
+    sweet_name: Optional[str] = None
+    ctstage_name: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
@@ -234,12 +236,15 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     full_name: Optional[str] = None
+    sweet_name: Optional[str] = None
+    ctstage_name: Optional[str] = None
     password: Optional[str] = Field(None, min_length=8)
 
 class User(UserBase):
     id: int
     is_active: bool
     is_admin: bool
+    is_sv: bool
     created_at: datetime
     updated_at: datetime
 
@@ -314,6 +319,11 @@ GET    /api/v1/articles/search   # 記事検索
 ### 5.1 データベーススキーマ
 
 #### Users テーブル
+
+**カラム説明**:
+- `sweet_name`: ユーザーのスイート名（オプション）
+- `ctstage_name`: CTステージ名（オプション）
+- `is_sv`: スーパーバイザーフラグ（デフォルト: false）
 ```sql
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -321,14 +331,45 @@ CREATE TABLE users (
     email VARCHAR(255) UNIQUE NOT NULL,
     hashed_password VARCHAR(255) NOT NULL,
     full_name VARCHAR(255),
+    sweet_name VARCHAR(255),
+    ctstage_name VARCHAR(255),
     is_active BOOLEAN DEFAULT TRUE,
     is_admin BOOLEAN DEFAULT FALSE,
+    is_sv BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_users_email ON users(email);
+
+-- 新しいカラムのインデックス（必要に応じて）
+-- CREATE INDEX idx_users_sweet_name ON users(sweet_name);
+-- CREATE INDEX idx_users_ctstage_name ON users(ctstage_name);
+CREATE INDEX idx_users_is_sv ON users(is_sv);
+```
+
+**マイグレーション例 (Alembic)**:
+```python
+# リビジョン 001_add_user_columns.py
+from alembic import op
+import sqlalchemy as sa
+
+def upgrade():
+    # 新しいカラムを追加
+    op.add_column('users', sa.Column('sweet_name', sa.String(255), nullable=True))
+    op.add_column('users', sa.Column('ctstage_name', sa.String(255), nullable=True))
+    op.add_column('users', sa.Column('is_sv', sa.Boolean(), nullable=False, server_default=sa.text('false')))
+    
+    # is_svカラムのインデックスを作成
+    op.create_index('idx_users_is_sv', 'users', ['is_sv'])
+
+def downgrade():
+    # ロールバック時の処理
+    op.drop_index('idx_users_is_sv', 'users')
+    op.drop_column('users', 'is_sv')
+    op.drop_column('users', 'ctstage_name')
+    op.drop_column('users', 'sweet_name')
 ```
 
 #### Articles テーブル
@@ -384,8 +425,11 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    sweet_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ctstage_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_sv: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.utcnow
@@ -436,6 +480,12 @@ class Article(Base):
     
     author: Mapped["User"] = relationship("User", back_populates="articles")
 ```
+
+#### マイグレーション注意事項
+
+- `sweet_name`、`ctstage_name`は`nullable=True`で追加するため、既存データへの影響はなし
+- `is_sv`は`server_default=false`で追加し、既存ユーザーは自動的に`false`に設定
+- マイグレーション実行前にステージング環境でのテストを必須とする
 
 ### 5.3 データベース接続設定
 
@@ -742,6 +792,7 @@ LOG_FILE=/var/log/api/app.log
 - 設定値はハードコーディングせず、環境変数から取得する
 - テストデータは本番データと明確に分離する
 - マイグレーションは必ずレビューしてから実行する
+- 新しいカラムの追加時はデフォルト値を適切に設定し、既存データへの影響を最小限にする
 - モノリシック構成でシンプルに保ち、必要に応じてスケールアップを検討する
 - Redisキャッシュはaioredisを使用して非同期対応する
 
