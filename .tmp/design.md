@@ -382,3 +382,137 @@ project/
   - タイムアウト設定（デフォルト30秒）
   - リトライ機構（最大3回）
   - サーキットブレーカーパターンの実装
+
+## 11. 情報カテゴリマスターデータ
+
+### 11.1 カテゴリ定義
+
+情報カテゴリとして選択可能な項目を以下に定義します：
+
+```python
+# app/constants/categories.py
+from enum import Enum
+
+class InfoCategory(Enum):
+    ACCOUNTING_FINANCE = ("_会計・財務", "01")
+    STARTUP_TROUBLE = ("_起動トラブル", "02")
+    PAYROLL_YEAREND = ("_給与・年末調整", "03")
+    DEPRECIATION_ASSET = ("_減価・ﾘｰｽ/資産管理", "04")
+    PUBLIC_MEDICAL = ("_公益・医療会計", "05")
+    CONSTRUCTION_COST = ("_工事・原価", "06")
+    RECEIVABLE_PAYABLE = ("_債権・債務", "07")
+    OFFICE_MANAGEMENT = ("_事務所管理", "08")
+    HUMAN_RESOURCES = ("_人事", "09")
+    TAX_RELATED = ("_税務関連", "10")
+    E_FILING = ("_電子申告", "11")
+    SALES = ("_販売", "12")
+    EDGE_TRACKER = ("EdgeTracker", "13")
+    MJS_CONNECT = ("MJS-Connect関連", "14")
+    INSTALL_MOU = ("インストール・MOU", "15")
+    KANTAN_SERIES = ("かんたん！シリーズ", "16")
+    OTHER_NON_SYSTEM = ("その他（システム以外）", "17")
+    OTHER_MJS_SYSTEM = ("その他MJSシステム", "18")
+    OTHER_SYSTEM_COMMON = ("その他システム（共通）", "19")
+    HARDWARE_HDD = ("ハード関連(HHD)", "20")
+    HARDWARE_SOFTWARE = ("ハード関連（ソフトフェア）", "21")
+    MY_NUMBER = ("マイナンバー", "22")
+    WORKFLOW = ("ワークフロー", "23")
+    TEMPORARY_RECEPTION = ("一時受付用", "24")
+    OPERATION_RULES = ("運用ルール", "25")
+    CUSTOMER_INFO = ("顧客情報", "26")
+    
+    def __init__(self, display_name: str, code: str):
+        self.display_name = display_name
+        self.code = code
+```
+
+### 11.2 データベース設計への反映
+
+```sql
+-- 情報カテゴリマスターテーブル
+CREATE TABLE info_categories (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(2) UNIQUE NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    display_order INTEGER NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 初期データ投入
+INSERT INTO info_categories (code, display_name, display_order) VALUES
+('01', '_会計・財務', 1),
+('02', '_起動トラブル', 2),
+('03', '_給与・年末調整', 3),
+('04', '_減価・ﾘｰｽ/資産管理', 4),
+('05', '_公益・医療会計', 5),
+('06', '_工事・原価', 6),
+('07', '_債権・債務', 7),
+('08', '_事務所管理', 8),
+('09', '_人事', 9),
+('10', '_税務関連', 10),
+('11', '_電子申告', 11),
+('12', '_販売', 12),
+('13', 'EdgeTracker', 13),
+('14', 'MJS-Connect関連', 14),
+('15', 'インストール・MOU', 15),
+('16', 'かんたん！シリーズ', 16),
+('17', 'その他（システム以外）', 17),
+('18', 'その他MJSシステム', 18),
+('19', 'その他システム（共通）', 19),
+('20', 'ハード関連(HHD)', 20),
+('21', 'ハード関連（ソフトフェア）', 21),
+('22', 'マイナンバー', 22),
+('23', 'ワークフロー', 23),
+('24', '一時受付用', 24),
+('25', '運用ルール', 25),
+('26', '顧客情報', 26);
+
+-- 既存記事テーブルと修正案テーブルのカテゴリフィールドは外部キー参照
+ALTER TABLE existing_articles ADD COLUMN info_category_code VARCHAR(2) REFERENCES info_categories(code);
+ALTER TABLE revision_proposals ADD CONSTRAINT fk_before_info_category 
+    FOREIGN KEY (before_info_category) REFERENCES info_categories(code);
+ALTER TABLE revision_proposals ADD CONSTRAINT fk_after_info_category 
+    FOREIGN KEY (after_info_category) REFERENCES info_categories(code);
+```
+
+### 11.3 API実装での考慮事項
+
+```python
+# app/schemas/category.py
+from pydantic import BaseModel
+from typing import List
+
+class InfoCategoryBase(BaseModel):
+    code: str
+    display_name: str
+    display_order: int
+    is_active: bool = True
+
+class InfoCategoryResponse(InfoCategoryBase):
+    id: int
+    
+    class Config:
+        from_attributes = True
+
+# app/api/v1/categories.py
+@router.get("/categories", response_model=List[InfoCategoryResponse])
+async def get_info_categories(
+    is_active: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """情報カテゴリ一覧を取得"""
+    query = select(InfoCategory).where(InfoCategory.is_active == is_active)
+    query = query.order_by(InfoCategory.display_order)
+    result = await db.execute(query)
+    return result.scalars().all()
+```
+
+### 11.4 フロントエンド実装の推奨事項
+
+- ドロップダウンメニューでの選択UI
+- カテゴリコード（2文字）での内部管理
+- 表示名での視覚的な識別
+- アンダースコア（_）で始まるカテゴリは業務系として視覚的にグループ化
+- カテゴリの有効/無効切り替えによる柔軟な運用
