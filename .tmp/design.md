@@ -111,12 +111,12 @@ graph TB
       async def create_user(self, user_data: UserCreate) -> User
       async def get_user(self, user_id: UUID) -> Optional[User]
       async def update_user_profile(self, user_id: UUID, profile_data: UserProfileUpdate) -> User
-      async def update_external_mappings(self, user_id: UUID, sweet_name: str, ctstage_name: str) -> User
+      async def update_external_mappings(self, user_id: UUID, sweet_name: str, ctstage_name: str) -> User  # 現段階では未実装
       async def set_supervisor_status(self, user_id: UUID, is_sv: bool) -> User
   ```
 - **内部実装方針**:
   - 拡張フィールド（sweet_name、ctstage_name、is_sv）の管理
-  - 外部システムとの名前マッピング検証
+  - 外部システムとの名前マッピング検証（現段階では未実装、カラムの準備のみ）
 
 #### RevisionService
 
@@ -493,18 +493,18 @@ PATCH  /api/v1/revisions/{revision_id}/instructions/{instruction_id}/resolve
 
 ### 5.2 外部API連携
 
-#### Sweet API連携
-```python
-class SweetAdapter:
-    async def validate_user_name(self, sweet_name: str) -> bool
-    async def get_shift_info(self, sweet_name: str, date: datetime) -> Optional[ShiftInfo]
-```
+**現段階では外部API連携は実装しません。** ユーザーテーブルに sweet_name, ctstage_name カラムを準備し、将来の拡張に備えます。
 
-#### Ctstage API連携
+#### 将来的な拡張予定（未実装）
 ```python
+# 将来的な実装予定
+class SweetAdapter:
+    async def validate_user_name(self, sweet_name: str) -> bool  # 未実装
+    async def get_shift_info(self, sweet_name: str, date: datetime) -> Optional[ShiftInfo]  # 未実装
+
 class CtstageAdapter:
-    async def validate_reporter_name(self, ctstage_name: str) -> bool
-    async def get_report_data(self, ctstage_name: str, period: DateRange) -> Optional[ReportData]
+    async def validate_reporter_name(self, ctstage_name: str) -> bool  # 未実装
+    async def get_report_data(self, ctstage_name: str, period: DateRange) -> Optional[ReportData]  # 未実装
 ```
 
 ## 6. エラーハンドリング
@@ -627,6 +627,17 @@ project/
 
 ## 11. 実装上の注意事項
 
+### 11.1 現段階の制約事項
+
+- **外部API連携は実装しない**: Sweet、Ctstageシステムとの連携機能は現段階では実装せず、カラムの準備のみ
+- **sweet_name, ctstage_name フィールド**: 
+  - ユーザーテーブルに nullable カラムとして追加
+  - 現段階では入力・検証・使用は行わない
+  - 将来の拡張に備えた準備のみ
+- **連携用アダプタークラス**: インターフェースの定義のみ、実装は将来の拡張で対応
+
+### 11.2 技術的な実装注意事項
+
 - **Redis 3.0.504互換性**: 
   - 基本的なGET/SET/EXPIRE操作のみ使用
   - Lua scriptingやStreamは使用不可
@@ -643,11 +654,6 @@ project/
 - **ログ出力**:
   - 構造化ログ（JSON形式）
   - リクエストID付与によるトレーサビリティ
-  
-- **外部システム連携**:
-  - タイムアウト設定（デフォルト30秒）
-  - リトライ機構（最大3回）
-  - サーキットブレーカーパターンの実装
 
 ## 12. 情報カテゴリマスターデータ
 
