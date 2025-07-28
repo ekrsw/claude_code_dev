@@ -8,7 +8,8 @@
       "Bash(venvScripts:*)",
       "Bash(pip install:*)",
       "Bash(powershell:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

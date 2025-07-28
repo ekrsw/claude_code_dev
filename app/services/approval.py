@@ -1,7 +1,7 @@
 """
 Approval service for managing revision approval workflow and history
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -16,15 +16,18 @@ from app.constants.enums import ApprovalAction, RevisionStatus, Role
 from app.core.exceptions import NotFoundError, AuthorizationError, InvalidStateError
 from app.repositories.approval import ApprovalHistoryRepository
 from app.repositories.revision import RevisionRepository
+from app.repositories.user import UserRepository
 
 
 class ApprovalService:
     """Service for managing approval workflow and history"""
     
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, notification_service=None):
         self.db = db
         self.approval_repo = ApprovalHistoryRepository(db)
         self.revision_repo = RevisionRepository(db)
+        self.user_repo = UserRepository(db)
+        self.notification_service = notification_service
     
     async def approve_revision(
         self,
@@ -66,7 +69,7 @@ class ApprovalService:
         # Update revision status
         revision.status = RevisionStatus.APPROVED
         revision.approver_id = approver_id
-        revision.approved_at = datetime.utcnow()
+        revision.approved_at = datetime.now(timezone.utc)
         revision.approval_comment = comment
         
         await self.revision_repo.update(revision)
@@ -79,6 +82,18 @@ class ApprovalService:
             comment=comment
         )
         await self.approval_repo.create(approval_history)
+        
+        # Send notification to proposer
+        if self.notification_service:
+            try:
+                approver = await self.user_repo.get_by_id(approver_id)
+                if approver:
+                    await self.notification_service.notify_revision_approved(
+                        revision, approver, revision.proposer_id
+                    )
+            except Exception as e:
+                # Log error but don't fail the approval process
+                print(f"Failed to send approval notification: {e}")
         
         return revision
     
@@ -126,7 +141,7 @@ class ApprovalService:
         # Update revision status
         revision.status = RevisionStatus.REJECTED
         revision.approver_id = rejector_id
-        revision.approved_at = datetime.utcnow()
+        revision.approved_at = datetime.now(timezone.utc)
         revision.approval_comment = comment
         
         await self.revision_repo.update(revision)
@@ -139,6 +154,18 @@ class ApprovalService:
             comment=comment
         )
         await self.approval_repo.create(approval_history)
+        
+        # Send notification to proposer
+        if self.notification_service:
+            try:
+                rejector = await self.user_repo.get_by_id(rejector_id)
+                if rejector:
+                    await self.notification_service.notify_revision_rejected(
+                        revision, rejector, revision.proposer_id, comment
+                    )
+            except Exception as e:
+                # Log error but don't fail the rejection process
+                print(f"Failed to send rejection notification: {e}")
         
         return revision
     
@@ -249,6 +276,18 @@ class ApprovalService:
             comment=f"修正指示: {instruction_text}"
         )
         await self.approval_repo.create(approval_history)
+        
+        # Send notification to proposer
+        if self.notification_service:
+            try:
+                requester = await self.user_repo.get_by_id(requester_id)
+                if requester:
+                    await self.notification_service.notify_revision_modification_requested(
+                        revision, requester, revision.proposer_id, instruction_text
+                    )
+            except Exception as e:
+                # Log error but don't fail the modification request process
+                print(f"Failed to send modification request notification: {e}")
         
         return revision
     

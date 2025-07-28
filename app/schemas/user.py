@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.constants.enums import Role
 from app.schemas.common import PaginatedResponse
@@ -19,7 +19,8 @@ class UserCreate(UserBase):
     """User creation schema"""
     password: str = Field(..., min_length=8, max_length=128, description="Password")
     
-    @validator("username")
+    @field_validator("username")
+    @classmethod
     def validate_username(cls, v):
         if not v.replace("_", "").replace("-", "").isalnum():
             raise ValueError("Username can only contain letters, numbers, hyphens, and underscores")

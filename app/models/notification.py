@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, String, Text, DateTime, ForeignKey, JSON, Enum as SQLEnum, UUID
 from sqlalchemy.orm import relationship
@@ -29,4 +29,4 @@ class Notification(BaseModel):
     def mark_as_read(self) -> None:
         """Mark notification as read"""
         self.is_read = True
-        self.read_at = datetime.utcnow()
+        self.read_at = datetime.now(timezone.utc)

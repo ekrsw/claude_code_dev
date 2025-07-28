@@ -219,16 +219,18 @@ async def submit_revision(
     db: AsyncSession = Depends(get_db)
 ):
     """修正案を提出（Draft → UnderReview）"""
-    workflow_service = WorkflowService(db)
+    # Import here to avoid circular imports
+    from app.services.notification import NotificationService
+    
+    notification_service = NotificationService(db)
+    revision_service = RevisionService(db, notification_service)
     
     try:
-        await workflow_service.transition_status(
+        await revision_service.submit_for_review(
             revision_id=revision_id,
-            new_status=RevisionStatus.UNDER_REVIEW,
             user_id=current_user.id,
             user_role=current_user.role
         )
-        await db.commit()
         
         return SuccessResponse(message="修正案を提出しました")
     except AuthorizationError as e:
@@ -251,7 +253,11 @@ async def approve_revision(
     db: AsyncSession = Depends(get_db)
 ):
     """修正案を承認（UnderReview/RevisionRequested → Approved）"""
-    approval_service = ApprovalService(db)
+    # Import here to avoid circular imports
+    from app.services.notification import NotificationService
+    
+    notification_service = NotificationService(db)
+    approval_service = ApprovalService(db, notification_service)
     
     try:
         await approval_service.approve_revision(
@@ -283,7 +289,11 @@ async def reject_revision(
     db: AsyncSession = Depends(get_db)
 ):
     """修正案を却下（UnderReview/RevisionRequested → Rejected）"""
-    approval_service = ApprovalService(db)
+    # Import here to avoid circular imports
+    from app.services.notification import NotificationService
+    
+    notification_service = NotificationService(db)
+    approval_service = ApprovalService(db, notification_service)
     
     try:
         await approval_service.reject_revision(
@@ -315,7 +325,11 @@ async def withdraw_revision(
     db: AsyncSession = Depends(get_db)
 ):
     """修正案を取り下げ（Draft/UnderReview/RevisionRequested → Withdrawn）"""
-    approval_service = ApprovalService(db)
+    # Import here to avoid circular imports
+    from app.services.notification import NotificationService
+    
+    notification_service = NotificationService(db)
+    approval_service = ApprovalService(db, notification_service)
     
     try:
         await approval_service.withdraw_revision(

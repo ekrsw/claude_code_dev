@@ -30,13 +30,14 @@ logger = structlog.get_logger()
 class RevisionService:
     """Revision management service"""
     
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, notification_service=None):
         self.db = db
         self.revision_repo = RevisionRepository(db)
         self.edit_history_repo = RevisionEditHistoryRepository(db)
         self.instruction_repo = RevisionInstructionRepository(db)
         self.article_repo = ArticleRepository(db)
         self.user_repo = UserRepository(db)
+        self.notification_service = notification_service
     
     async def create_revision(
         self,
@@ -345,3 +346,56 @@ class RevisionService:
             response_data['after_keywords'] = response_data['after_keywords'].split(',')
         
         return RevisionResponse(**response_data)
+    
+    async def submit_for_review(
+        self,
+        revision_id: UUID,
+        user_id: UUID,
+        user_role: Role
+    ) -> RevisionResponse:
+        """Submit revision for review"""
+        revision = await self.revision_repo.get(revision_id)
+        if not revision:
+            raise NotFoundError(f"Revision {revision_id} not found")
+        
+        # Check if revision can be submitted
+        if revision.status != RevisionStatus.DRAFT:
+            raise InvalidStateError("Only draft revisions can be submitted for review")
+        
+        # Check permissions (only proposer can submit)
+        if revision.proposer_id != user_id and user_role != Role.ADMIN:
+            raise AuthorizationError("Only the proposer can submit revision for review")
+        
+        # Update status
+        revision.status = RevisionStatus.UNDER_REVIEW
+        
+        try:
+            await self.revision_repo.update(revision)
+            await self.db.commit()
+            
+            # Send notifications to approvers
+            if self.notification_service:
+                try:
+                    # Get all approvers (users who can approve revisions)
+                    approvers = await self.user_repo.get_approvers()
+                    
+                    if approvers:
+                        await self.notification_service.notify_revision_submitted(
+                            revision, approvers
+                        )
+                except Exception as e:
+                    # Log error but don't fail the submission process
+                    logger.error(f"Failed to send submission notifications: {e}")
+            
+            logger.info(
+                "Revision submitted for review",
+                revision_id=str(revision_id),
+                user_id=str(user_id)
+            )
+            
+            return await self._build_revision_response(revision)
+            
+        except Exception as e:
+            await self.db.rollback()
+            logger.error("Revision submission failed", error=str(e))
+            raise InvalidStateError("Failed to submit revision for review")
