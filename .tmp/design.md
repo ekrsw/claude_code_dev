@@ -423,7 +423,7 @@ sequenceDiagram
       "info_category": "02",
       "keywords": ["キーワード1", "キーワード2"],
       "importance": true,
-      "target": "社内",
+      "target": "社内向け",
       "question": "質問内容",
       "answer": "回答内容"
     },

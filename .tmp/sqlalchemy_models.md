@@ -83,8 +83,8 @@ class RevisionStatus(str, Enum):
 
 class ArticleTarget(str, Enum):
     """記事対象者分類"""
-    INTERNAL = "社内"
-    EXTERNAL = "社外"
+    INTERNAL = "社内向け"
+    EXTERNAL = "社外向け"
     EXCLUDED = "対象外"
 
 

@@ -218,7 +218,7 @@ CREATE TABLE articles (
     info_category_code VARCHAR(2) REFERENCES info_categories(code),
     keywords TEXT,
     importance BOOLEAN NOT NULL DEFAULT FALSE,
-    target VARCHAR(20) NOT NULL DEFAULT '社内',
+    target VARCHAR(20) NOT NULL DEFAULT '社内向け',
     question TEXT,
     answer TEXT,
     additional_comment TEXT,
@@ -228,7 +228,7 @@ CREATE TABLE articles (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
-    CONSTRAINT chk_articles_target CHECK (target IN ('社内', '社外', '対象外')),
+    CONSTRAINT chk_articles_target CHECK (target IN ('社内向け', '社外向け', '対象外')),
     CONSTRAINT chk_articles_title_not_empty CHECK (char_length(trim(title)) > 0)
 );
 
@@ -245,7 +245,7 @@ CREATE INDEX idx_articles_content_gin ON articles USING gin(to_tsvector('japanes
 CREATE INDEX idx_articles_keywords_gin ON articles USING gin(to_tsvector('japanese', keywords));
 
 COMMENT ON TABLE articles IS '既存記事テーブル（参照専用）';
-COMMENT ON COLUMN articles.target IS '対象者分類: 社内, 社外, 対象外';
+COMMENT ON COLUMN articles.target IS '対象者分類: 社内向け, 社外向け, 対象外';
 COMMENT ON COLUMN articles.importance IS '重要度フラグ: true=重要, false=一般';
 ```
 
@@ -293,8 +293,8 @@ CREATE TABLE revisions (
     version INTEGER NOT NULL DEFAULT 1,
     
     CONSTRAINT chk_revisions_status CHECK (status IN ('draft', 'under_review', 'revision_requested', 'approved', 'rejected', 'withdrawn')),
-    CONSTRAINT chk_revisions_before_target CHECK (before_target IS NULL OR before_target IN ('社内', '社外', '対象外')),
-    CONSTRAINT chk_revisions_after_target CHECK (after_target IS NULL OR after_target IN ('社内', '社外', '対象外')),
+    CONSTRAINT chk_revisions_before_target CHECK (before_target IS NULL OR before_target IN ('社内向け', '社外向け', '対象外')),
+    CONSTRAINT chk_revisions_after_target CHECK (after_target IS NULL OR after_target IN ('社内向け', '社外向け', '対象外')),
     CONSTRAINT chk_revisions_reason_not_empty CHECK (char_length(trim(reason)) >= 10),
     CONSTRAINT chk_revisions_approval_consistency CHECK (
         (status = 'approved' AND approver_id IS NOT NULL AND approved_at IS NOT NULL) OR
@@ -777,9 +777,9 @@ INSERT INTO users (username, email, password_hash, role, is_sv) VALUES
 ```sql
 -- サンプル記事（テスト用）
 INSERT INTO articles (id, article_number, title, content, info_category_code, importance, target) VALUES
-('ART001', 'KB-001', '会計システムの使い方', '会計システムの基本的な使用方法について説明します。', '01', false, '社内'),
-('ART002', 'KB-002', 'システム起動時のトラブルシューティング', 'システムが起動しない場合の対処法をまとめました。', '02', true, '社内'),
-('ART003', 'KB-003', '給与計算の手順', '月次給与計算の詳細な手順について解説します。', '03', true, '社内');
+('ART001', 'KB-001', '会計システムの使い方', '会計システムの基本的な使用方法について説明します。', '01', false, '社内向け'),
+('ART002', 'KB-002', 'システム起動時のトラブルシューティング', 'システムが起動しない場合の対処法をまとめました。', '02', true, '社内向け'),
+('ART003', 'KB-003', '給与計算の手順', '月次給与計算の詳細な手順について解説します。', '03', true, '社内向け');
 ```
 
 この設計により、要件定義書で求められている全ての機能を適切にサポートできるデータベース構造が完成します。
