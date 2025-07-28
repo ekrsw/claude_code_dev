@@ -24,6 +24,7 @@ class ApprovalAction(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     REVISION_REQUESTED = "revision_requested"
+    WITHDRAWN = "withdrawn"
 
 
 class NotificationType(str, Enum):

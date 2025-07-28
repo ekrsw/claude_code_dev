@@ -62,6 +62,7 @@ class Revision(BaseModel):
     after_category = relationship("InfoCategory", foreign_keys=[after_info_category])
     edit_histories = relationship("RevisionEditHistory", back_populates="revision", cascade="all, delete-orphan")
     instructions = relationship("RevisionInstruction", back_populates="revision", cascade="all, delete-orphan")
+    # Approval histories
     approval_histories = relationship("ApprovalHistory", back_populates="revision", cascade="all, delete-orphan")
     
     def __repr__(self) -> str:

@@ -7,7 +7,8 @@
       "Bash(python:*)",
       "Bash(venvScripts:*)",
       "Bash(pip install:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(curl:*)"
     ],
     "deny": []
   }

@@ -25,8 +25,15 @@ class ArticleRepository(BaseRepository[Article]):
             select(Article).where(
                 or_(
                     Article.title.ilike(f"%{query}%"),
-                    Article.content.ilike(f"%{query}%")
+                    Article.answer.ilike(f"%{query}%")
                 )
             )
         )
         return list(result.scalars().all())
+    
+    async def get_by_article_id(self, article_id: str) -> Optional[Article]:
+        """Get article by article_id"""
+        result = await self.db.execute(
+            select(Article).where(Article.article_id == article_id)
+        )
+        return result.scalar_one_or_none()
