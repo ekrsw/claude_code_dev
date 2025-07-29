@@ -3,7 +3,7 @@ from typing import Any, Optional, Union
 from datetime import datetime, timedelta
 
 try:
-    import aioredis
+    import redis.asyncio as aioredis
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
@@ -26,7 +26,7 @@ class CacheManager:
     async def connect(self) -> None:
         """Connect to Redis"""
         try:
-            self.redis = await aioredis.from_url(
+            self.redis = aioredis.from_url(
                 self.url,
                 encoding="utf-8",
                 decode_responses=True,
