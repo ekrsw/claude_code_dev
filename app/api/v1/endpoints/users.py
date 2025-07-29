@@ -13,6 +13,8 @@ from app.schemas.user import (
 )
 from app.schemas.common import PaginationParams
 from app.services.user import UserService
+from app.services.notification import NotificationService
+from app.constants.enums import NotificationType
 
 router = APIRouter()
 
@@ -133,9 +135,26 @@ async def update_user_role(
 ):
     """ユーザーロール更新（管理者のみ）"""
     user_service = UserService(db)
+    notification_service = NotificationService(db)
     
     try:
         user = await user_service.update_role(user_id, role_data, current_user)
+        
+        # ロール変更の通知を送信
+        if user.id != current_user.id:
+            await notification_service.create_revision_notification(
+                recipient_id=user.id,
+                notification_type=NotificationType.REVISION_EDITED,  # 適切な通知タイプがない場合の代替
+                revision_id=UUID('00000000-0000-0000-0000-000000000000'),  # ダミーID
+                title="ロール変更通知",
+                content=f"あなたのロールが {role_data.role} に変更されました。",
+                extra_data={
+                    "changed_by": str(current_user.id),
+                    "new_role": role_data.role,
+                    "notification_context": "role_change"
+                }
+            )
+        
         return user
     except Exception as e:
         raise HTTPException(
@@ -201,3 +220,29 @@ async def list_users(
         page=pagination.page,
         size=pagination.size
     )
+
+
+@router.get("/{user_id}/notifications/unread-count")
+async def get_user_unread_notifications_count(
+    user_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """ユーザーの未読通知数を取得"""
+    # ユーザー本人または管理者のみアクセス可能
+    if user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied"
+        )
+    
+    notification_service = NotificationService(db)
+    
+    try:
+        unread_count = await notification_service.get_unread_count(user_id)
+        return {"unread_count": unread_count}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )

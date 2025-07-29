@@ -34,7 +34,7 @@ pytest-cov==6.0.0
 python-dotenv==1.0.1
 
 # Logging
-structlog==24.6.0
+structlog==25.4.0
 
 # Date/Time handling
 python-dateutil==2.9.0.post0

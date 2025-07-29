@@ -33,8 +33,8 @@ class RevisionInstructionService:
         instructor_id: UUID
     ) -> ModificationInstructionResponse:
         """修正指示を作成"""
-        # RevisionInstructionモデルのインスタンスを作成
-        instruction = RevisionInstruction(
+        # データベースに保存
+        created_instruction = await self.instruction_repo.create(
             revision_id=revision_id,
             instructor_id=instructor_id,
             instruction_text=instruction_data.instruction_text,
@@ -42,9 +42,6 @@ class RevisionInstructionService:
             priority=instruction_data.priority,
             due_date=instruction_data.due_date
         )
-        
-        # データベースに保存
-        created_instruction = await self.instruction_repo.create(instruction)
         await self.db.flush()
         
         logger.info(

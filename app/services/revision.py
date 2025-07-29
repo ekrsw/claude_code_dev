@@ -104,7 +104,35 @@ class RevisionService:
         
         # Save to database
         try:
-            revision = await self.revision_repo.create(revision)
+            # Convert revision model to dict for repository create method
+            revision_data_dict = {
+                'target_article_id': revision.target_article_id,
+                'proposer_id': revision.proposer_id,
+                'reason': revision.reason,
+                'status': revision.status,
+                'before_title': revision.before_title,
+                'after_title': revision.after_title,
+                'before_info_category': revision.before_info_category,
+                'after_info_category': revision.after_info_category,
+                'before_keywords': revision.before_keywords,
+                'after_keywords': revision.after_keywords,
+                'before_importance': revision.before_importance,
+                'after_importance': revision.after_importance,
+                'before_target': revision.before_target,
+                'after_target': revision.after_target,
+                'before_question': revision.before_question,
+                'after_question': revision.after_question,
+                'before_answer': revision.before_answer,
+                'after_answer': revision.after_answer,
+                'before_additional_comment': revision.before_additional_comment,
+                'after_additional_comment': revision.after_additional_comment,
+                'before_publish_start': revision.before_publish_start,
+                'after_publish_start': revision.after_publish_start,
+                'before_publish_end': revision.before_publish_end,
+                'after_publish_end': revision.after_publish_end,
+                'version': revision.version if hasattr(revision, 'version') else 1
+            }
+            revision = await self.revision_repo.create(**revision_data_dict)
             await self.db.commit()
             
             # Invalidate cache
@@ -172,7 +200,25 @@ class RevisionService:
                 }
                 revision.after_info_category = modifications.info_category
                 
-            # ... (other fields similarly)
+            if modifications.answer is not None:
+                changes['answer'] = {'before': revision.after_answer, 'after': modifications.answer}
+                revision.after_answer = modifications.answer
+                
+            if modifications.keywords is not None:
+                keywords_str = ','.join(modifications.keywords) if modifications.keywords else None
+                changes['keywords'] = {'before': revision.after_keywords, 'after': keywords_str}
+                revision.after_keywords = keywords_str
+                
+            if modifications.question is not None:
+                changes['question'] = {'before': revision.after_question, 'after': modifications.question}
+                revision.after_question = modifications.question
+                
+            if modifications.additional_comment is not None:
+                changes['additional_comment'] = {
+                    'before': revision.after_additional_comment,
+                    'after': modifications.additional_comment
+                }
+                revision.after_additional_comment = modifications.additional_comment
         
         # Increment version
         revision.version += 1
@@ -182,7 +228,7 @@ class RevisionService:
             
             # Record edit history
             if changes:
-                edit_history = RevisionEditHistory(
+                await self.edit_history_repo.create(
                     revision_id=revision_id,
                     editor_id=user_id,
                     editor_role=user_role.value,
@@ -190,7 +236,6 @@ class RevisionService:
                     version_before=current_version,
                     version_after=revision.version
                 )
-                await self.edit_history_repo.create(edit_history)
             
             await self.db.commit()
             
@@ -213,7 +258,7 @@ class RevisionService:
         revision_id: UUID,
         user_id: UUID,
         user_role: Role
-    ) -> None:
+    ) -> bool:
         """Delete a revision (only for draft status)"""
         revision = await self.revision_repo.get(revision_id)
         if not revision:
@@ -235,6 +280,8 @@ class RevisionService:
             revision_id=str(revision_id),
             user_id=str(user_id)
         )
+        
+        return True
     
     async def list_revisions(
         self,
@@ -265,6 +312,16 @@ class RevisionService:
         # Apply pagination
         revisions = revisions[skip:skip + limit]
         
+        return [await self._build_revision_response(r) for r in revisions]
+    
+    async def get_revisions_by_article(self, article_id: str) -> List[RevisionResponse]:
+        """Get revisions by article ID"""
+        revisions = await self.revision_repo.get_by_article(article_id)
+        return [await self._build_revision_response(r) for r in revisions]
+    
+    async def get_revisions_by_proposer(self, proposer_id: UUID) -> List[RevisionResponse]:
+        """Get revisions by proposer ID"""
+        revisions = await self.revision_repo.get_by_proposer(proposer_id)
         return [await self._build_revision_response(r) for r in revisions]
     
     async def calculate_diff(self, revision_id: UUID) -> RevisionDetailDiff:
@@ -325,25 +382,50 @@ class RevisionService:
     
     async def _build_revision_response(self, revision: Revision) -> RevisionResponse:
         """Build revision response with additional info"""
-        # Get related data
-        proposer = revision.proposer if hasattr(revision, 'proposer') else await self.user_repo.get(revision.proposer_id)
-        approver = revision.approver if hasattr(revision, 'approver') and revision.approver_id else None
-        article = revision.target_article if hasattr(revision, 'target_article') else await self.article_repo.get_by_article_id(revision.target_article_id)
+        # Get related data - always fetch explicitly in async context
+        proposer = await self.user_repo.get(revision.proposer_id)
+        approver = await self.user_repo.get(revision.approver_id) if revision.approver_id else None
+        article = await self.article_repo.get_by_article_id(revision.target_article_id)
         
-        # Build response
+        # Get current datetime for fallback
+        current_time = datetime.utcnow()
+        
+        # Build response with explicit field mapping, avoiding lazy loading
         response_data = {
-            **revision.__dict__,
+            'id': revision.id,
+            'target_article_id': revision.target_article_id,
+            'proposer_id': revision.proposer_id,
+            'approver_id': revision.approver_id,
+            'status': revision.status,
+            'reason': revision.reason,
+            'before_title': revision.before_title,
+            'after_title': revision.after_title,
+            'before_info_category': revision.before_info_category,
+            'after_info_category': revision.after_info_category,
+            'before_keywords': revision.before_keywords,
+            'after_keywords': revision.after_keywords,
+            'before_importance': revision.before_importance,
+            'after_importance': revision.after_importance,
+            'before_target': revision.before_target,
+            'after_target': revision.after_target,
+            'before_question': revision.before_question,
+            'after_question': revision.after_question,
+            'before_answer': revision.before_answer,
+            'after_answer': revision.after_answer,
+            'before_additional_comment': revision.before_additional_comment,
+            'after_additional_comment': revision.after_additional_comment,
+            'before_publish_start': revision.before_publish_start,
+            'after_publish_start': revision.after_publish_start,
+            'before_publish_end': revision.before_publish_end,
+            'after_publish_end': revision.after_publish_end,
+            'version': revision.version if hasattr(revision, 'version') and revision.version else 1,
+            'created_at': current_time,
+            'updated_at': current_time,
             'proposer_name': proposer.full_name if proposer else None,
             'approver_name': approver.full_name if approver else None,
             'article_title': article.title if article else None,
-            'modified_fields': revision.get_modified_fields()
+            'modified_fields': revision.get_modified_fields() if hasattr(revision, 'get_modified_fields') else []
         }
-        
-        # Convert keywords back to list
-        if response_data.get('before_keywords'):
-            response_data['before_keywords'] = response_data['before_keywords'].split(',')
-        if response_data.get('after_keywords'):
-            response_data['after_keywords'] = response_data['after_keywords'].split(',')
         
         return RevisionResponse(**response_data)
     
@@ -368,9 +450,10 @@ class RevisionService:
         
         # Update status
         revision.status = RevisionStatus.UNDER_REVIEW
+        revision.submitted_at = datetime.utcnow()
         
         try:
-            await self.revision_repo.update(revision)
+            await self.db.flush()
             await self.db.commit()
             
             # Send notifications to approvers

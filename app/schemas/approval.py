@@ -56,7 +56,7 @@ class ModificationRequest(BaseModel):
     """Schema for modification request"""
     instruction_text: str = Field(..., description="Instruction text for modification", min_length=1)
     required_fields: Optional[list[str]] = Field(None, description="List of fields that need modification")
-    priority: str = Field("normal", description="Priority level", regex="^(low|normal|high|urgent)$")
+    priority: str = Field("normal", description="Priority level", pattern="^(low|normal|high|urgent)$")
 
 
 class ApprovalStatusCounts(BaseModel):

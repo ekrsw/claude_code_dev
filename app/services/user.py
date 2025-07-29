@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
 from app.constants.enums import Role
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError, AuthorizationError
 from app.core.security import get_password_hash, verify_password, validate_password_strength
 from app.models.user import User
 from app.repositories.user import UserRepository
@@ -59,8 +59,11 @@ class UserService:
         return user
     
     async def get_user(self, user_id: UUID) -> Optional[User]:
-        """Get user by ID"""
-        return await self.user_repo.get(user_id)
+        """Get user by ID (active users only)"""
+        user = await self.user_repo.get(user_id)
+        if user and not user.is_active:
+            return None
+        return user
     
     async def get_user_by_username(self, username: str) -> Optional[User]:
         """Get user by username"""
@@ -87,7 +90,7 @@ class UserService:
         
         # Check permissions (users can only update themselves, admins can update anyone)
         if user_id != current_user.id and not current_user.is_admin:
-            raise PermissionError("Not authorized to update this user")
+            raise AuthorizationError("Not authorized to update this user")
         
         update_data = {}
         
@@ -128,7 +131,7 @@ class UserService:
         """Update user profile"""
         # Check permissions
         if user_id != current_user.id and not current_user.is_admin:
-            raise PermissionError("Not authorized to update this profile")
+            raise AuthorizationError("Not authorized to update this profile")
         
         user = await self.user_repo.update_profile(
             user_id=user_id,
@@ -155,7 +158,7 @@ class UserService:
     ) -> User:
         """Update user role (admin only)"""
         if not current_user.is_admin:
-            raise PermissionError("Admin access required")
+            raise AuthorizationError("Admin access required")
         
         user = await self.user_repo.update_role(
             user_id=user_id,
@@ -189,7 +192,7 @@ class UserService:
         """Change user password"""
         # Check permissions
         if user_id != current_user.id and not current_user.is_admin:
-            raise PermissionError("Not authorized to change this password")
+            raise AuthorizationError("Not authorized to change this password")
         
         user = await self.user_repo.get(user_id)
         if not user:
@@ -198,7 +201,7 @@ class UserService:
         # Verify current password (except for admin)
         if not current_user.is_admin:
             if not verify_password(current_password, user.hashed_password):
-                raise ValidationError("Current password is incorrect")
+                raise AuthorizationError("Current password is incorrect")
         
         # Validate new password strength
         password_validation = validate_password_strength(new_password)
@@ -224,7 +227,7 @@ class UserService:
     async def activate_user(self, user_id: UUID, current_user: User) -> User:
         """Activate user account (admin only)"""
         if not current_user.is_admin:
-            raise PermissionError("Admin access required")
+            raise AuthorizationError("Admin access required")
         
         user = await self.user_repo.activate_user(user_id)
         if not user:
@@ -239,7 +242,7 @@ class UserService:
     async def deactivate_user(self, user_id: UUID, current_user: User) -> User:
         """Deactivate user account (admin only)"""
         if not current_user.is_admin:
-            raise PermissionError("Admin access required")
+            raise AuthorizationError("Admin access required")
         
         # Cannot deactivate self
         if user_id == current_user.id:
@@ -258,7 +261,7 @@ class UserService:
     async def delete_user(self, user_id: UUID, current_user: User) -> bool:
         """Delete user account (admin only)"""
         if not current_user.is_admin:
-            raise PermissionError("Admin access required")
+            raise AuthorizationError("Admin access required")
         
         # Cannot delete self
         if user_id == current_user.id:

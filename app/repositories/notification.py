@@ -93,6 +93,7 @@ class NotificationRepository(BaseRepository[Notification]):
         if notification and not notification.is_read:
             notification.mark_as_read()
             await self.db.commit()
+            await self.db.refresh(notification)
         return notification
     
     async def mark_multiple_as_read(

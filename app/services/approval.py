@@ -54,7 +54,7 @@ class ApprovalService:
             InvalidStateError: If revision cannot be approved
         """
         # Get revision
-        revision = await self.revision_repo.get_by_id(revision_id)
+        revision = await self.revision_repo.get(revision_id)
         if not revision:
             raise NotFoundError(f"Revision {revision_id} not found")
         
@@ -72,21 +72,21 @@ class ApprovalService:
         revision.approved_at = datetime.now(timezone.utc)
         revision.approval_comment = comment
         
-        await self.revision_repo.update(revision)
+        await self.db.flush()
         
         # Create approval history record
-        approval_history = ApprovalHistory(
-            revision_id=revision_id,
-            actor_id=approver_id,
-            action=ApprovalAction.APPROVED,
-            comment=comment
-        )
-        await self.approval_repo.create(approval_history)
+        approval_history_data = {
+            'revision_id': revision_id,
+            'actor_id': approver_id,
+            'action': ApprovalAction.APPROVED,
+            'comment': comment
+        }
+        await self.approval_repo.create(**approval_history_data)
         
         # Send notification to proposer
         if self.notification_service:
             try:
-                approver = await self.user_repo.get_by_id(approver_id)
+                approver = await self.user_repo.get(approver_id)
                 if approver:
                     await self.notification_service.notify_revision_approved(
                         revision, approver, revision.proposer_id
@@ -126,7 +126,7 @@ class ApprovalService:
             raise ValueError("Rejection comment is required")
         
         # Get revision
-        revision = await self.revision_repo.get_by_id(revision_id)
+        revision = await self.revision_repo.get(revision_id)
         if not revision:
             raise NotFoundError(f"Revision {revision_id} not found")
         
@@ -144,21 +144,21 @@ class ApprovalService:
         revision.approved_at = datetime.now(timezone.utc)
         revision.approval_comment = comment
         
-        await self.revision_repo.update(revision)
+        await self.db.flush()
         
         # Create approval history record
-        approval_history = ApprovalHistory(
-            revision_id=revision_id,
-            actor_id=rejector_id,
-            action=ApprovalAction.REJECTED,
-            comment=comment
-        )
-        await self.approval_repo.create(approval_history)
+        approval_history_data = {
+            'revision_id': revision_id,
+            'actor_id': rejector_id,
+            'action': ApprovalAction.REJECTED,
+            'comment': comment
+        }
+        await self.approval_repo.create(**approval_history_data)
         
         # Send notification to proposer
         if self.notification_service:
             try:
-                rejector = await self.user_repo.get_by_id(rejector_id)
+                rejector = await self.user_repo.get(rejector_id)
                 if rejector:
                     await self.notification_service.notify_revision_rejected(
                         revision, rejector, revision.proposer_id, comment
@@ -194,7 +194,7 @@ class ApprovalService:
             InvalidStateError: If revision cannot be withdrawn
         """
         # Get revision
-        revision = await self.revision_repo.get_by_id(revision_id)
+        revision = await self.revision_repo.get(revision_id)
         if not revision:
             raise NotFoundError(f"Revision {revision_id} not found")
         
@@ -209,16 +209,16 @@ class ApprovalService:
         # Update revision status
         revision.status = RevisionStatus.WITHDRAWN
         
-        await self.revision_repo.update(revision)
+        await self.db.flush()
         
         # Create approval history record
-        approval_history = ApprovalHistory(
-            revision_id=revision_id,
-            actor_id=withdrawer_id,
-            action=ApprovalAction.WITHDRAWN,
-            comment=comment
-        )
-        await self.approval_repo.create(approval_history)
+        approval_history_data = {
+            'revision_id': revision_id,
+            'actor_id': withdrawer_id,
+            'action': ApprovalAction.WITHDRAWN,
+            'comment': comment
+        }
+        await self.approval_repo.create(**approval_history_data)
         
         return revision
     
@@ -251,7 +251,7 @@ class ApprovalService:
             InvalidStateError: If revision cannot be modified
         """
         # Get revision
-        revision = await self.revision_repo.get_by_id(revision_id)
+        revision = await self.revision_repo.get(revision_id)
         if not revision:
             raise NotFoundError(f"Revision {revision_id} not found")
         
@@ -266,21 +266,21 @@ class ApprovalService:
         # Update revision status
         revision.status = RevisionStatus.REVISION_REQUESTED
         
-        await self.revision_repo.update(revision)
+        await self.db.flush()
         
         # Create approval history record
-        approval_history = ApprovalHistory(
-            revision_id=revision_id,
-            actor_id=requester_id,
-            action=ApprovalAction.REVISION_REQUESTED,
-            comment=f"修正指示: {instruction_text}"
-        )
-        await self.approval_repo.create(approval_history)
+        approval_history_data = {
+            'revision_id': revision_id,
+            'actor_id': requester_id,
+            'action': ApprovalAction.REVISION_REQUESTED,
+            'comment': f"修正指示: {instruction_text}"
+        }
+        await self.approval_repo.create(**approval_history_data)
         
         # Send notification to proposer
         if self.notification_service:
             try:
-                requester = await self.user_repo.get_by_id(requester_id)
+                requester = await self.user_repo.get(requester_id)
                 if requester:
                     await self.notification_service.notify_revision_modification_requested(
                         revision, requester, revision.proposer_id, instruction_text
@@ -313,7 +313,7 @@ class ApprovalService:
             AuthorizationError: If user cannot view history
         """
         # Get revision to check permissions
-        revision = await self.revision_repo.get_by_id(revision_id)
+        revision = await self.revision_repo.get(revision_id)
         if not revision:
             raise NotFoundError(f"Revision {revision_id} not found")
         
@@ -408,3 +408,31 @@ class ApprovalService:
                 counts["rejected"] += 1
         
         return counts
+    
+    async def get_pending_approvals_for_approver(
+        self,
+        approver_id: UUID,
+        skip: int = 0,
+        limit: int = 10
+    ) -> List[Revision]:
+        """
+        Get pending approval revisions for a specific approver
+        
+        Args:
+            approver_id: ID of approver
+            skip: Number of records to skip (for pagination)
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of revisions pending approval
+        """
+        # Get revisions that are pending approval (UNDER_REVIEW status)
+        query = select(Revision).where(
+            Revision.status == RevisionStatus.UNDER_REVIEW
+        ).options(
+            selectinload(Revision.proposer),
+            selectinload(Revision.target_article)
+        ).offset(skip).limit(limit).order_by(Revision.created_at.desc())
+        
+        result = await self.db.execute(query)
+        return result.scalars().all()

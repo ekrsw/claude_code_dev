@@ -9,7 +9,10 @@
       "Bash(pip install:*)",
       "Bash(powershell:*)",
       "Bash(curl:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(sed:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

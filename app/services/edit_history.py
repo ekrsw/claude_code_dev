@@ -34,7 +34,7 @@ class EditHistoryService:
     ) -> RevisionEditHistory:
         """編集履歴を記録"""
         
-        edit_history = RevisionEditHistory(
+        created_history = await self.edit_history_repo.create(
             revision_id=revision_id,
             editor_id=editor_id,
             editor_role=editor_role,
@@ -43,8 +43,6 @@ class EditHistoryService:
             version_before=version_before,
             version_after=version_after
         )
-        
-        created_history = await self.edit_history_repo.create(edit_history)
         await self.db.flush()
         
         logger.info(
