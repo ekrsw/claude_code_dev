@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,22 +29,60 @@ class AuthService:
         self.db = db
         self.user_repo = UserRepository(db)
     
-    async def authenticate_user(self, credentials: UserLogin) -> Optional[User]:
+    async def authenticate_user(
+        self, 
+        credentials: UserLogin,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> Optional[User]:
         """Authenticate user with username/email and password"""
         # Get user by username or email
         user = await self.user_repo.get_by_username_or_email(credentials.username)
         
         if not user:
             logger.info("Authentication failed - user not found", identifier=credentials.username)
+            # Log failed login attempt
+            try:
+                from app.services.security_audit import security_audit
+                await security_audit.log_login_failed(
+                    username=credentials.username,
+                    ip_address=ip_address or "unknown",
+                    user_agent=user_agent or "unknown",
+                    reason="user_not_found"
+                )
+            except Exception as e:
+                logger.warning("Failed to log security event", error=str(e))
             return None
         
         if not user.is_active:
             logger.info("Authentication failed - user inactive", user_id=str(user.id))
+            # Log failed login attempt
+            try:
+                from app.services.security_audit import security_audit
+                await security_audit.log_login_failed(
+                    username=credentials.username,
+                    ip_address=ip_address or "unknown",
+                    user_agent=user_agent or "unknown",
+                    reason="user_inactive"
+                )
+            except Exception as e:
+                logger.warning("Failed to log security event", error=str(e))
             return None
         
         # Verify password
         if not verify_password(credentials.password, user.hashed_password):
             logger.info("Authentication failed - invalid password", user_id=str(user.id))
+            # Log failed login attempt
+            try:
+                from app.services.security_audit import security_audit
+                await security_audit.log_login_failed(
+                    username=credentials.username,
+                    ip_address=ip_address or "unknown",
+                    user_agent=user_agent or "unknown",
+                    reason="invalid_password"
+                )
+            except Exception as e:
+                logger.warning("Failed to log security event", error=str(e))
             return None
         
         # Update last login timestamp
@@ -74,15 +112,46 @@ class AuthService:
             token_type="bearer"
         )
     
-    async def login(self, credentials: UserLogin) -> Tuple[Token, User]:
+    async def login(
+        self, 
+        credentials: UserLogin, 
+        user_agent: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> Tuple[Token, User]:
         """Login user and return tokens"""
         # Authenticate user
-        user = await self.authenticate_user(credentials)
+        user = await self.authenticate_user(credentials, ip_address, user_agent)
         if not user:
             raise AuthenticationError("Invalid credentials")
         
         # Create tokens
         tokens = await self.create_tokens(user)
+        
+        # Create session if session management is available
+        if user_agent and ip_address:
+            try:
+                from app.services.session import session_service
+                await session_service.create_session(
+                    user_id=user.id,
+                    user_agent=user_agent,
+                    ip_address=ip_address,
+                    access_token=tokens.access_token,
+                    refresh_token=tokens.refresh_token
+                )
+            except Exception as e:
+                logger.warning("Failed to create session", error=str(e), user_id=str(user.id))
+        
+        # Log security event
+        try:
+            from app.services.security_audit import security_audit
+            await security_audit.log_login_success(
+                user_id=user.id,
+                username=user.username,
+                ip_address=ip_address or "unknown",
+                user_agent=user_agent or "unknown"
+            )
+        except Exception as e:
+            logger.warning("Failed to log security event", error=str(e))
         
         logger.info("User logged in", user_id=str(user.id), username=user.username)
         
@@ -129,10 +198,19 @@ class AuthService:
     async def logout(
         self,
         access_token: str,
-        refresh_token: Optional[str] = None
+        refresh_token: Optional[str] = None,
+        session_id: Optional[str] = None
     ) -> bool:
-        """Logout user by blacklisting tokens"""
+        """Logout user by blacklisting tokens and removing session"""
         success = True
+        
+        # Delete session if session ID provided
+        if session_id:
+            try:
+                from app.services.session import session_service
+                await session_service.delete_session(session_id)
+            except Exception as e:
+                logger.warning("Failed to delete session", error=str(e), session_id=session_id)
         
         # Blacklist access token
         if not await self._blacklist_token(access_token):
@@ -281,3 +359,32 @@ class AuthService:
             "exp": payload.get("exp"),
             "is_blacklisted": await self.is_token_blacklisted(token)
         }
+    
+    async def get_user_sessions(self, user_id: UUID) -> List[dict]:
+        """Get all active sessions for a user"""
+        try:
+            from app.services.session import session_service
+            sessions = await session_service.get_user_sessions(user_id)
+            
+            return [
+                {
+                    "session_id": session.session_id,
+                    "user_agent": session.user_agent,
+                    "ip_address": session.ip_address,
+                    "created_at": session.created_at.isoformat(),
+                    "last_activity": session.last_activity.isoformat()
+                }
+                for session in sessions
+            ]
+        except Exception as e:
+            logger.error("Failed to get user sessions", user_id=str(user_id), error=str(e))
+            return []
+    
+    async def revoke_user_session(self, user_id: UUID, session_id: str) -> bool:
+        """Revoke a specific user session"""
+        try:
+            from app.services.session import session_service
+            return await session_service.delete_session(session_id)
+        except Exception as e:
+            logger.error("Failed to revoke session", user_id=str(user_id), session_id=session_id, error=str(e))
+            return False

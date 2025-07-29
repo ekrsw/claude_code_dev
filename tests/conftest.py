@@ -21,9 +21,14 @@ from app.constants.enums import Role, RevisionStatus
 
 
 # テスト用データベースURL
-TEST_DATABASE_URL = settings.DATABASE_URL.replace(
-    "knowledge_revision", "knowledge_revision_test"
-)
+if "sqlite" in settings.DATABASE_URL:
+    # SQLiteの場合、テスト用のファイル名を作成
+    TEST_DATABASE_URL = settings.DATABASE_URL.replace(".db", "_test.db")
+else:
+    # PostgreSQLの場合
+    TEST_DATABASE_URL = settings.DATABASE_URL.replace(
+        "knowledge_revision", "knowledge_revision_test"
+    )
 
 
 # イベントループの設定

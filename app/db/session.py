@@ -7,16 +7,24 @@ from sqlalchemy.pool import NullPool
 from app.core.config import settings
 
 # Create async engine
-engine = create_async_engine(
-    str(settings.DATABASE_URL),
-    echo=settings.DEBUG,
-    future=True,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    pool_pre_ping=True,
-    # Use NullPool for serverless environments
-    # poolclass=NullPool,
-)
+if "sqlite" in str(settings.DATABASE_URL):
+    # SQLite configuration
+    engine = create_async_engine(
+        str(settings.DATABASE_URL),
+        echo=settings.DEBUG,
+        future=True,
+        poolclass=NullPool,  # SQLite doesn't support connection pooling
+    )
+else:
+    # PostgreSQL configuration
+    engine = create_async_engine(
+        str(settings.DATABASE_URL),
+        echo=settings.DEBUG,
+        future=True,
+        pool_size=settings.DATABASE_POOL_SIZE,
+        max_overflow=settings.DATABASE_MAX_OVERFLOW,
+        pool_pre_ping=True,
+    )
 
 # Create async session factory
 AsyncSessionLocal = sessionmaker(

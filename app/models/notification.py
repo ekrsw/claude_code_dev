@@ -17,7 +17,7 @@ class Notification(BaseModel):
     title = Column(String(200), nullable=False)
     content = Column(Text, nullable=False)
     extra_data = Column(JSON, nullable=True)  # Additional data (revision_id, etc.)
-    is_read = Column(Boolean, default=False, nullable=False)
+    is_read = Column(Boolean, default=False, nullable=False, server_default="false")
     read_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships

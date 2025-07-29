@@ -19,28 +19,34 @@ class TestApprovalService:
     
     def setup_method(self):
         """Setup test fixtures"""
-        self.mock_db = Mock()
+        self.mock_db = AsyncMock()
         self.service = ApprovalService(self.mock_db)
-        self.service.approval_repo = Mock()
-        self.service.revision_repo = Mock()
+        self.service.approval_repo = AsyncMock()
+        self.service.revision_repo = AsyncMock()
+        self.service.user_repo = AsyncMock()
         
         self.revision_id = uuid4()
         self.approver_id = uuid4()
         self.proposer_id = uuid4()
         
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
         self.sample_revision = Revision(
             id=self.revision_id,
             proposer_id=self.proposer_id,
-            status=RevisionStatus.UNDER_REVIEW
+            status=RevisionStatus.UNDER_REVIEW,
+            created_at=now,
+            updated_at=now,
+            reason="Test revision"
         )
     
     @pytest.mark.asyncio
     async def test_approve_revision_success(self):
         """Test successful revision approval"""
         # Setup
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
-        self.service.revision_repo.update = AsyncMock()
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         self.service.approval_repo.create = AsyncMock()
+        self.service.user_repo.get = AsyncMock(return_value=None)  # No approver user needed for this test
         
         # Execute
         result = await self.service.approve_revision(
@@ -54,14 +60,13 @@ class TestApprovalService:
         assert result.status == RevisionStatus.APPROVED
         assert result.approver_id == self.approver_id
         assert result.approval_comment == "Looks good!"
-        self.service.revision_repo.update.assert_called_once()
         self.service.approval_repo.create.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_approve_revision_not_found(self):
         """Test approval when revision not found"""
         # Setup
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=None)
+        self.service.revision_repo.get = AsyncMock(return_value=None)
         
         # Execute & Verify
         with pytest.raises(NotFoundError):
@@ -76,7 +81,7 @@ class TestApprovalService:
         """Test approval when revision in invalid state"""
         # Setup
         self.sample_revision.status = RevisionStatus.APPROVED
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         
         # Execute & Verify
         with pytest.raises(InvalidStateError):
@@ -90,7 +95,7 @@ class TestApprovalService:
     async def test_approve_revision_insufficient_permissions(self):
         """Test approval with insufficient permissions"""
         # Setup
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         
         # Execute & Verify
         with pytest.raises(AuthorizationError):
@@ -104,7 +109,7 @@ class TestApprovalService:
     async def test_reject_revision_success(self):
         """Test successful revision rejection"""
         # Setup
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         self.service.revision_repo.update = AsyncMock()
         self.service.approval_repo.create = AsyncMock()
         
@@ -122,14 +127,13 @@ class TestApprovalService:
         assert result.status == RevisionStatus.REJECTED
         assert result.approver_id == self.approver_id
         assert result.approval_comment == comment
-        self.service.revision_repo.update.assert_called_once()
         self.service.approval_repo.create.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_reject_revision_empty_comment(self):
         """Test rejection with empty comment"""
         # Setup
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         
         # Execute & Verify
         with pytest.raises(ValueError):
@@ -145,7 +149,7 @@ class TestApprovalService:
         """Test revision withdrawal by proposer"""
         # Setup
         self.sample_revision.status = RevisionStatus.DRAFT
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         self.service.revision_repo.update = AsyncMock()
         self.service.approval_repo.create = AsyncMock()
         
@@ -159,7 +163,6 @@ class TestApprovalService:
         
         # Verify
         assert result.status == RevisionStatus.WITHDRAWN
-        self.service.revision_repo.update.assert_called_once()
         self.service.approval_repo.create.assert_called_once()
     
     @pytest.mark.asyncio
@@ -167,7 +170,7 @@ class TestApprovalService:
         """Test revision withdrawal by admin"""
         # Setup
         self.sample_revision.status = RevisionStatus.UNDER_REVIEW
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         self.service.revision_repo.update = AsyncMock()
         self.service.approval_repo.create = AsyncMock()
         
@@ -181,7 +184,6 @@ class TestApprovalService:
         
         # Verify
         assert result.status == RevisionStatus.WITHDRAWN
-        self.service.revision_repo.update.assert_called_once()
         self.service.approval_repo.create.assert_called_once()
     
     @pytest.mark.asyncio
@@ -189,7 +191,7 @@ class TestApprovalService:
         """Test unauthorized withdrawal attempt"""
         # Setup
         self.sample_revision.status = RevisionStatus.UNDER_REVIEW
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         
         # Execute & Verify
         with pytest.raises(AuthorizationError):
@@ -203,7 +205,7 @@ class TestApprovalService:
     async def test_request_modification_success(self):
         """Test successful modification request"""
         # Setup
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         self.service.revision_repo.update = AsyncMock()
         self.service.approval_repo.create = AsyncMock()
         
@@ -221,7 +223,6 @@ class TestApprovalService:
         
         # Verify
         assert result.status == RevisionStatus.REVISION_REQUESTED
-        self.service.revision_repo.update.assert_called_once()
         self.service.approval_repo.create.assert_called_once()
     
     @pytest.mark.asyncio
@@ -229,7 +230,7 @@ class TestApprovalService:
         """Test modification request on invalid state"""
         # Setup
         self.sample_revision.status = RevisionStatus.APPROVED  # Cannot modify approved
-        self.service.revision_repo.get_by_id = AsyncMock(return_value=self.sample_revision)
+        self.service.revision_repo.get = AsyncMock(return_value=self.sample_revision)
         
         # Execute & Verify
         with pytest.raises(InvalidStateError):

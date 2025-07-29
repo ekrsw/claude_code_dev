@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import structlog
@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.api.v1.api import api_router
 from app.core.exceptions import setup_exception_handlers
 from app.db.session import engine, Base
+from app.middleware.rate_limiting import rate_limit_middleware
 from app.utils.logger import setup_logging
 
 # Setup structured logging
@@ -40,6 +41,9 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_STR}/redoc",
     lifespan=lifespan,
 )
+
+# Set up rate limiting middleware
+app.middleware("http")(rate_limit_middleware)
 
 # Set up CORS
 if settings.BACKEND_CORS_ORIGINS:

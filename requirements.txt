@@ -6,6 +6,7 @@ uvicorn[standard]==0.35.0
 asyncpg==0.30.0
 sqlalchemy==2.0.40
 alembic==1.15.2
+aiosqlite==0.21.0
 
 # Redis Cache
 redis[hiredis]==5.3.0
@@ -28,6 +29,8 @@ httpx==0.28.1
 pytest==8.3.5
 pytest-asyncio==0.25.2
 pytest-cov==6.0.0
+respx==0.21.1
+pytest-mock==3.14.0
 
 # Development
 python-dotenv==1.0.1

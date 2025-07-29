@@ -22,6 +22,15 @@ class BaseRepository(Generic[ModelType]):
     
     async def create(self, **kwargs) -> ModelType:
         """Create a new record"""
+        from datetime import datetime, timezone
+        
+        # Ensure created_at and updated_at are set for SQLite compatibility
+        now = datetime.now(timezone.utc)
+        if 'created_at' not in kwargs:
+            kwargs['created_at'] = now
+        if 'updated_at' not in kwargs:
+            kwargs['updated_at'] = now
+            
         instance = self.model(**kwargs)
         self.db.add(instance)
         await self.db.flush()

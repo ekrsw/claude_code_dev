@@ -6,6 +6,17 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 from datetime import datetime, timezone
 
+def create_test_notification(**kwargs):
+    """Helper function to create test notification with required timestamps"""
+    now = datetime.now(timezone.utc)
+    defaults = {
+        'created_at': now,
+        'updated_at': now,
+        'is_read': False
+    }
+    defaults.update(kwargs)
+    return Notification(**defaults)
+
 from app.services.notification import NotificationService
 from app.repositories.notification import NotificationRepository
 from app.models.notification import Notification
@@ -76,13 +87,12 @@ def sample_revision(sample_user):
 @pytest.fixture
 def sample_notification(sample_user):
     """Sample notification for testing"""
-    return Notification(
+    return create_test_notification(
         id=uuid4(),
         recipient_id=sample_user.id,
         type=NotificationType.REVISION_CREATED,
         title="テスト通知",
         content="テスト用の通知コンテンツです",
-        is_read=False,
         extra_data={"revision_id": str(uuid4())}
     )
 
@@ -95,13 +105,12 @@ class TestNotificationService:
         """通知作成のテスト"""
         # Arrange
         notification_id = uuid4()
-        mock_notification = Notification(
+        mock_notification = create_test_notification(
             id=notification_id,
             recipient_id=sample_user.id,
             type=NotificationType.REVISION_CREATED,
             title="テスト通知",
-            content="テスト用の通知です",
-            is_read=False
+            content="テスト用の通知です"
         )
         mock_notification_repo.create.return_value = mock_notification
 
@@ -124,7 +133,7 @@ class TestNotificationService:
         """通知一覧取得のテスト"""
         # Arrange
         notifications = [
-            Notification(
+            create_test_notification(
                 id=uuid4(),
                 recipient_id=sample_user.id,
                 type=NotificationType.REVISION_CREATED,
@@ -220,7 +229,7 @@ class TestNotificationService:
     async def test_notify_revision_created(self, notification_service, mock_notification_repo, sample_revision, sample_approver):
         """修正案作成通知のテスト"""
         # Arrange
-        mock_notification = Notification(
+        mock_notification = create_test_notification(
             id=uuid4(),
             recipient_id=sample_approver.id,
             type=NotificationType.REVISION_CREATED,
@@ -245,7 +254,7 @@ class TestNotificationService:
     async def test_notify_revision_submitted(self, notification_service, mock_notification_repo, sample_revision, sample_approver):
         """修正案提出通知のテスト"""
         # Arrange
-        mock_notification = Notification(
+        mock_notification = create_test_notification(
             id=uuid4(),
             recipient_id=sample_approver.id,
             type=NotificationType.REVISION_SUBMITTED,
@@ -270,7 +279,7 @@ class TestNotificationService:
     async def test_notify_revision_approved(self, notification_service, mock_notification_repo, sample_revision, sample_approver, sample_user):
         """修正案承認通知のテスト"""
         # Arrange
-        mock_notification = Notification(
+        mock_notification = create_test_notification(
             id=uuid4(),
             recipient_id=sample_user.id,
             type=NotificationType.REVISION_APPROVED,
@@ -295,7 +304,7 @@ class TestNotificationService:
     async def test_notify_revision_rejected(self, notification_service, mock_notification_repo, sample_revision, sample_approver, sample_user):
         """修正案却下通知のテスト"""
         # Arrange
-        mock_notification = Notification(
+        mock_notification = create_test_notification(
             id=uuid4(),
             recipient_id=sample_user.id,
             type=NotificationType.REVISION_REJECTED,
@@ -321,7 +330,7 @@ class TestNotificationService:
     async def test_notify_revision_modification_requested(self, notification_service, mock_notification_repo, sample_revision, sample_approver, sample_user):
         """修正依頼通知のテスト"""
         # Arrange
-        mock_notification = Notification(
+        mock_notification = create_test_notification(
             id=uuid4(),
             recipient_id=sample_user.id,
             type=NotificationType.REVISION_REQUEST,
@@ -347,7 +356,7 @@ class TestNotificationService:
     async def test_notify_comment_added(self, notification_service, mock_notification_repo, sample_revision, sample_approver, sample_user):
         """コメント追加通知のテスト"""
         # Arrange
-        mock_notification = Notification(
+        mock_notification = create_test_notification(
             id=uuid4(),
             recipient_id=sample_user.id,
             type=NotificationType.COMMENT_ADDED,

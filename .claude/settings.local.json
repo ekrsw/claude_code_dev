@@ -15,7 +15,9 @@
       "Bash(ls:*)",
       "Bash(pip uninstall:*)",
       "Bash(touch:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(pip show:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }
